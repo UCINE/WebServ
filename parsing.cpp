@@ -79,6 +79,14 @@ int main (int argc, char **argv) {
 
     try {
         GlobalConfig config (argv[1]);
+        std::string str = "log_level";
+        const std::map<std::string, std::string>& configMap = config.getGlobalConfig();
+
+        try {
+            std::cout << configMap.at("log_level ") << std::endl;
+        } catch (const std::out_of_range& e) {
+            std::cout << "Key not found: " << str << std::endl;
+        }
 
         ///////////////////////////////////
         
