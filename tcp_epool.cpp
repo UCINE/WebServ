@@ -1,10 +1,8 @@
 #include "class.hpp"
 
-const int MAX_CLIENTS = 5;
-const int BUFFER_SIZE = 1024;
-
 
 int main() {
+    int j = 0;
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1) {
         perror("Error creating socket");
@@ -93,7 +91,15 @@ int main() {
                 Client* current = head;
                 while (current != nullptr) {
                     if (current->getSocketDescriptor() == fd) {
+                       // vector<char> buffer(BUFFER_SIZE);
                         ssize_t bytesRead = recv(fd, current->getBuffer(), BUFFER_SIZE, 0);
+                        //ssize_t bytesRead = read(fd, current->getBuffer(), BUFFER_SIZE);
+
+                        //for (int i = 0; i < bytesRead; i++) {
+                            // buffer.push_back(current->getBuffer()[i]);
+                           // buffer[i] = current->getBuffer()[i];    
+                        //}
+                        cout << "bytesRead = " << bytesRead << endl;
                         if (bytesRead <= 0) {
                             // Connection closed or error
                             if (bytesRead == 0) {
@@ -106,10 +112,14 @@ int main() {
                             // Process received data
                             current->getBuffer()[bytesRead] = '\0';
                             current->setBytesRead(bytesRead);
-                            std::cout << "Received data from client " << fd << ": " << current->getBuffer() << std::endl;
+                            //cout << j << endl;
+                            current->getRequest2()->parse(current->getBuffer(), bytesRead);
+                           // current->getRequest2()->printHeaders();
+                            //cout << j++ << endl;
+                           // std::cout << "Received data from client " << fd << ": " << current->getBuffer() << std::endl;
 
                             // Echo back to the client
-                            send(fd, current->getBuffer(), bytesRead, 0);
+                            //send(fd, current->getBuffer(), bytesRead, 0);
                         }
                         break;
                     }

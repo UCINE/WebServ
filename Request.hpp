@@ -35,7 +35,7 @@ class Request2 {
             file = ".data" + std::to_string(client);
             //ofstream bodyFile(file, ios::out | ios::trunc);
             bodyFile.open(file, ios::out | ios::trunc | ios::binary);
-            //bodyFile.close();
+            bodyFile.close();
         }
 
         void handleBody(const char* buffer, size_t bufferLength, size_t pos) {
@@ -66,37 +66,28 @@ class Request2 {
                 //    getchar();
                 if (bodyFile) {
                     size_t writeSize = std::min(static_cast<size_t>(content_length), bufferLength - pos);
-                   // if (content_length < bufferLength - pos) {
-                     //   writeSize = content_length;
-                   // }
                     //cout << "\ncontent_length = " << content_length << " -pos = " << pos << " -bufferLength = " << bufferLength << " -writsize = " << writeSize << " -BufferStart = " << buffer[0] <<  endl;
-                    // for (int i = 0; i < writeSize; i++) {
-                    //     bodyFile << (buffer + pos)[i];
-                    // }
+                    cout << "\ncontent_length = " << content_length << " -pos = " << pos << " -bufferLength = " << bufferLength << " -writsize = " << writeSize << " -BufferStart = " << buffer[0] <<  endl;
+                    
+                    bodyFile.open(file, ios::out | ios::app | ios::binary);
                     bodyFile.write(buffer + pos, writeSize);
-                    // if (content_length == 746) {
-                    //     //cout << "buffer == " << buffer << endl;
-                    //     for (int j = 0; j < writeSize; j++) {
-                    //         cout << buffer[j];
-                    //     }
-                    //     for (int j = 0; j < writeSize; j++) {
-                    //         bodyFile << buffer[j];
-                    //     }
-                    // }
+                    
                     bodyFile.flush();
+                    bodyFile.close();
                     content_length -= writeSize;
-                    cout << "content_length = " << content_length << endl; 
+                    //cout << "content_length = " << content_length << endl; 
                 }
                 //bodyFile.close();
             }
             if (content_length <= 0) {
                 // End of message
                 cout << "content_length =<< " << content_length << endl;
+                usleep(100);
                 state = REQUEST_LINE;
             }
         }
 
-        void parse(const std::string& request) {
+        void parse(const std::string& request, int bufferlength) {
             std::istringstream requestStream(request);
             std::string line;
             header_length = 0;
@@ -170,7 +161,7 @@ class Request2 {
             }
 
             if (state == BODY)
-                handleBody(buffer, BUFFER_SIZE, bodyStart);
+                handleBody(buffer, bufferlength, bodyStart);
             // if (chunked && state == BODY) {
             //     buffer  = buffer + bodyStart;
             //     if (bodyComplete) {
