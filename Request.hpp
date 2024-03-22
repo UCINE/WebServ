@@ -10,6 +10,11 @@ class Request2 {
         HEADERS,
         BODY
     };
+    enum ChunkState {
+        CHUNK_SIZE,
+        CHUNK_DATA,
+        CHUNK_END
+    };
     public:
         int client;
         char *buffer;
@@ -28,38 +33,145 @@ class Request2 {
         long content_length = LONG_MAX;
         int header_length = 0;
         ofstream bodyFile;
+        long chunkSize = 0;
+        string chunkSizeStr;
+        ChunkState chunkState = CHUNK_SIZE;
+        char lastchar = 0;
+        int limit = 0;
+        size_t i;
 
 
         Request2(int& client) {
             this->client = client;
             file = ".data" + std::to_string(client);
             //ofstream bodyFile(file, ios::out | ios::trunc);
-            bodyFile.open(file, ios::out | ios::trunc | ios::binary);
+            bodyFile.open(file, ios::out | ios::trunc);
             bodyFile.close();
         }
 
-        void handleBody(const char* buffer, size_t bufferLength, size_t pos) {
-            if (chunked) {
-                // Handling chunked transfer
-                size_t i = pos;
-                while (i < bufferLength) {
-                    // Read chunk size
-                    std::string chunkSizeStr;
-                    for (; buffer[i] != '\r' && (i + 1) < bufferLength; ++i) {
-                        chunkSizeStr += buffer[i];
-                    }
-                    i += 2; // Skip \r\n
-                    int chunkSize = std::stoi(chunkSizeStr, nullptr, 16);
-                    if (chunkSize == 0) break; // End of message
+        bool containsCRLF(const char* str) {
+            return strstr(str, "\r\n") != nullptr;
+        }
 
-                    // Write chunk to file
-                    std::ofstream bodyFile("body.dat", std::ios::binary | std::ios::app);
-                    if (bodyFile) {
-                        bodyFile.write(buffer + i, chunkSize);
+        void handleBody(const char* buffer, size_t bufferLength, size_t pos) {
+            // if (chunked) {
+            //     bodyFile.open(file, ios::out | ios::app);
+            //     int i = pos;
+            //     while (i < bufferLength) {
+            //         if (buffer[i] == '\r' && chunkSize == 0 && limit == 0)
+            //         {
+            //             limit++;
+            //             i++;
+            //             continue;
+            //         }
+            //         if (buffer[i] == '\n' && limit == 1 && chunkSize == 0)
+            //         {
+            //             limit++;
+            //             i++;
+            //             continue;
+            //         }
+            //         if (limit == 2) {
+            //             if (chunkState == CHUNK_END || chunkState == CHUNK_DATA) {
+            //                 chunkState = CHUNK_SIZE;
+            //                 limit = 0;
+            //                 // if (chunkState == CHUNK_DATA)
+            //                 //     limit == 0;
+            //             }
+            //             else if (chunkState == CHUNK_SIZE) {
+            //                 limit = 0;
+            //                 chunkState = CHUNK_DATA;
+            //                 chunkSize = stol(chunkSizeStr, 0, 16);
+            //                 //cout << "chunkSize = " << chunkSize << endl;
+            //                 chunkSizeStr = "";
+            //                 if (chunkSize == 0) {
+            //                     state = REQUEST_LINE;
+            //                     chunkState = CHUNK_END;
+            //                     bodyFile.close();
+            //                     return;
+            //                 }
+            //             }
+            //         }
+            //         if (chunkState == CHUNK_SIZE) {
+            //             chunkSizeStr += buffer[i];
+            //             //cout << "bufferi[i] = " << (int)buffer[i] << " -i = " << i << endl;
+            //         }
+            //         if (chunkState == CHUNK_DATA) {
+            //             bodyFile.write(buffer + i, 1);
+            //             chunkSize--;
+            //         }
+            //         i++;
+            //         limit = 0;
+            //     }
+            //     bodyFile.flush();
+            //     bodyFile.close();
+                
+            // } 
+if (chunked) {
+    bodyFile.open(file, ios::out | ios::app);
+    //size_t i = pos; // the fault is here, somehow pos is 9 instead of 0????
+    if (chunkState == CHUNK_END) {i = pos; chunkState = CHUNK_SIZE;}
+    else i = 0;
+
+    while (i < bufferLength) {
+        if (chunkState == CHUNK_SIZE) {
+           // cout << "buffer[i] = " << (int)buffer[i] << " -i = " << i << endl;
+            if (buffer[i] == '\r') {
+                // Skip '\r'.
+                i++;
+                continue;
+            } else if (buffer[i] == '\n') {
+                // Process chunk size after reaching '\n'.
+                if (!chunkSizeStr.empty()) {
+               //     cout << "chunkSizeStr = " << chunkSizeStr << endl;
+                    chunkSize = std::stol(chunkSizeStr, nullptr, 16);
+                    chunkSizeStr.clear();
+                    if (chunkSize == 0) {
+                        // Handle end of all chunks.
+                        state = REQUEST_LINE;
+                        chunkState = CHUNK_END;
+                        bodyFile.close();
+                        return;
                     }
-                    i += chunkSize + 2; // Skip chunk data and trailing \r\n
+                    chunkState = CHUNK_DATA;
+                }
+                i++; // Move past '\n'.
+                continue;
+            } else {
+                // Accumulate hex digits for chunk size.
+                chunkSizeStr += buffer[i];
             }
-            } else if (content_length > 0) {
+        } else if (chunkState == CHUNK_DATA) {
+            size_t remainingDataInBuffer = bufferLength - i;
+            size_t dataToWrite = std::min(static_cast<size_t>(chunkSize), remainingDataInBuffer);
+
+            // Write the chunk data to the file.
+            bodyFile.write(buffer + i, dataToWrite);
+           // cout << "dataToWrite = " << dataToWrite << " remainingDataInBuffer = " << remainingDataInBuffer << endl;
+
+            chunkSize -= dataToWrite;
+            i += dataToWrite;
+            bodyFile.flush();
+
+            // Check if the end of the chunk was reached.
+            if (chunkSize == 0) {
+                // Expect the next chunk size after an additional CRLF.
+              //  cout << "im in down : buffer[i] = " << (int)buffer[i] << " -i = " << i << endl;
+                if (buffer[i] == '\n' && lastchar == '\r') {
+                    chunkState = CHUNK_SIZE; // Prepare for the next chunk.
+                    lastchar = 0;
+                    i++; // Skip the '\n' following '\r'.
+                    continue;
+                }
+                lastchar = buffer[i];
+            }
+            else i--; // Adjust because of i++ in the loop.
+        }
+        i++;
+    }
+    bodyFile.close();
+}
+
+            else if (content_length > 0 && !chunked) {
                 // Non-chunked transfer, content_length must be set beforehand
                 //std::ofstream bodyFile(file, std::ios::app);
                 //if (content_length < 5000)
@@ -67,9 +179,9 @@ class Request2 {
                 if (bodyFile) {
                     size_t writeSize = std::min(static_cast<size_t>(content_length), bufferLength - pos);
                     //cout << "\ncontent_length = " << content_length << " -pos = " << pos << " -bufferLength = " << bufferLength << " -writsize = " << writeSize << " -BufferStart = " << buffer[0] <<  endl;
-                    cout << "\ncontent_length = " << content_length << " -pos = " << pos << " -bufferLength = " << bufferLength << " -writsize = " << writeSize << " -BufferStart = " << buffer[0] <<  endl;
+                    //cout << "\ncontent_length = " << content_length << " -pos = " << pos << " -bufferLength = " << bufferLength << " -writsize = " << writeSize << " -BufferStart = " << buffer[0] <<  endl;
                     
-                    bodyFile.open(file, ios::out | ios::app | ios::binary);
+                    bodyFile.open(file, ios::out | ios::app);
                     bodyFile.write(buffer + pos, writeSize);
                     
                     bodyFile.flush();
@@ -79,9 +191,9 @@ class Request2 {
                 }
                 //bodyFile.close();
             }
-            if (content_length <= 0) {
+            if (content_length <= 0 && !chunked) {
                 // End of message
-                cout << "content_length =<< " << content_length << endl;
+                //cout << "content_length =<< " << content_length << endl;
                 usleep(100);
                 state = REQUEST_LINE;
             }
@@ -96,11 +208,13 @@ class Request2 {
                 // while (1);
                 //cout << "request = " <<  buffer << endl;
                 //cout.write(buffer, BUFFER_SIZE);
+                cout << "what the fuck am i doing here" << endl;
                 std::getline(requestStream, line);
                 std::istringstream lineStream(line);
                 lineStream >> method >> path >> version;
                 state = HEADERS;
                 header_length = line.length() + 1;
+                chunkState = CHUNK_END;
                 //cout << "Method line = " << line << endl; ///////////
             }
             while (state == HEADERS && std::getline(requestStream, line) ) {
@@ -109,7 +223,7 @@ class Request2 {
                 if (line[0] == '\r') {
                     headersComplete = true;
                     state = BODY;
-                    cout << "headersComplete = " << headersComplete << endl;
+                   // cout << "headersComplete = " << headersComplete << endl;
                     break;
                 }
                 //cout << "2nd ch = " << (int)line[1] << endl;
@@ -157,7 +271,12 @@ class Request2 {
                 bodyStart = 0;
             }
             else {
-                bodyStart += 4;
+                if (chunked && chunkState == CHUNK_END) {
+                    bodyStart += 2;
+                }
+                else if (!chunked)
+                    bodyStart += 4;
+                //cout << "bodyStart = " << bodyStart << endl;
             }
 
             if (state == BODY)
